@@ -39,6 +39,7 @@ FROM ubuntu:24.04
 # Set environment variables for NVIDIA capabilities
 ENV NVIDIA_DRIVER_CAPABILITIES all
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=/usr/lib/jellyfin-ffmpeg/lib
 
 # Install only the necessary runtime dependencies: Node.js, FFmpeg, and drivers.
 # We also add 'ca-certificates' which is crucial for making HTTPS requests from Node.js.
