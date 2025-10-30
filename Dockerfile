@@ -51,15 +51,17 @@ RUN apt-get update && \
     curl \
     gnupg \
     ca-certificates \
-    mesa-va-drivers \
-    vainfo && \
+    mesa-va-drivers && \
     curl -s https://repo.jellyfin.org/ubuntu/jellyfin_team.gpg.key | gpg --dearmor | tee /usr/share/keyrings/jellyfin.gpg >/dev/null && \
     echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/ubuntu noble main' > /etc/apt/sources.list.d/jellyfin.list && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y --no-install-recommends \
     jellyfin-ffmpeg7 \
     nodejs && \
+    # Symlink Jellyfin's ffmpeg, ffprobe and vainfo for systemwide use
     ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/bin/ffmpeg && \
+    ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/bin/ffprobe && \
+    ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/bin/vainfo && \
     # Clean up apt caches to reduce final image size
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
