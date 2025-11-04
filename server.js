@@ -1271,34 +1271,15 @@ app.post('/api/sources/fetch-groups', requireAuth, async (req, res) => {
                 if (!xcInfo.server || !xcInfo.username || !xcInfo.password) {
                     return res.status(400).json({ error: 'XC source requires server, username, and password.' });
                 }
-                fetchUrl = `${xcInfo.server}/get.php?username=${xcInfo.username}&password=${xcInfo.password}&type=m3u_plus&output=ts`;
-                fetchOptions = { headers: { 'User-Agent': 'VLC/3.0.20 (Linux; x86_64)' } };
-                content = await fetchUrlContent(fetchUrl, fetchOptions);
 
-                // --- ADDITION: Update cache if fetched fresh ---
-                if (sourceToUse) { // Only update cache if we know the source object
-                     try {
-                        const cacheFileName = `raw_${sourceToUse.id}.m3u_cache`;
-                        const cacheFilePath = path.join(RAW_CACHE_DIR, cacheFileName);
-                        fs.writeFileSync(cacheFilePath, content);
-                        console.log(`[API_GROUPS] Updated raw cache file during fetch: ${cacheFilePath}`);
-                        sourceToUse.cachedRawPath = cacheFilePath; // Update path in memory
-
-                        // IMPORTANT: Save updated settings back to file
-                        const currentSettings = getSettings(); // Re-get settings to avoid overwriting other changes
-                        const sourceList = sourceToUse.sourceType === 'm3u' ? currentSettings.m3uSources : currentSettings.epgSources; // Assuming sourceType is passed or derivable
-                        const index = sourceList.findIndex(s => s.id === sourceToUse.id);
-                        if (index !== -1) {
-                            sourceList[index].cachedRawPath = cacheFilePath;
-                            saveSettings(currentSettings); // Save the updated path
-                        }
-
-                    } catch (cacheWriteError) {
-                        console.error(`[API_GROUPS] Failed to update raw cache file for source "${sourceToUse.name}" after fresh fetch:`, cacheWriteError.message);
-                    }
-                }
-                // --- END ADDITION ---
-
+                // --- NEW XC CATEGORY FETCHING LOGIC ---
+                console.log('[API_GROUPS] Using XtreamClient to fetch all categories.');
+                const client = new XtreamClient(xcInfo.server, xcInfo.username, xcInfo.password);
+                const allCategories = await client.getAllCategories(); // This is the new method
+                
+                // The rest of the old logic for parsing M3U is now skipped for XC sources.
+                return res.json({ success: true, groups: allCategories, usedCache: false });
+                // --- END NEW LOGIC ---
             } else if (type === 'file' && url) { // Assuming url holds file path for type file
                  const filePath = sourceToUse?.path || path.join(SOURCES_DIR, path.basename(url)); // Prefer path from settings if available
                  if (fs.existsSync(filePath)) {
