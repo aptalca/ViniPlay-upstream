@@ -2601,9 +2601,7 @@ app.delete('/api/data', requireAuth, requireAdmin, (req, res) => {
 
 // MODIFIED: Stream endpoint now logs to history and has enhanced tracking.
 app.get('/stream', requireAuth, async (req, res) => {
-    const streamUrl = req.query.url;
-    const profileId = req.query.profileId;
-    const userAgentId = req.query.userAgentId;
+    const { url: streamUrl, profileId, userAgentId, vodName, vodLogo } = req.query;
     const userId = req.session.userId;
     const username = req.session.username;
     const clientIp = req.clientIp;
@@ -2655,13 +2653,24 @@ app.get('/stream', requireAuth, async (req, res) => {
         return res.status(404).send(`Error: User agent with ID "${userAgentId}" not found.`);
     }
 
-    //-- ENHANCEMENT: Find channel name and logo for logging.
-    const allChannels = parseM3U(fs.existsSync(LIVE_CHANNELS_M3U_PATH) ? fs.readFileSync(LIVE_CHANNELS_M3U_PATH, 'utf-8') : '');
-    const channel = allChannels.find(c => c.url === streamUrl);
-    const channelName = channel ? channel.displayName || channel.name : 'Direct Stream';
-    const channelId = channel ? channel.id : null;
-    const channelLogo = channel ? channel.logo : null;
+    // --- NEW: VOD-aware Activity Logging ---
+    let channelName, channelId, channelLogo;
+    if (vodName) {
+        // It's a VOD stream
+        channelName = vodName;
+        channelLogo = vodLogo || null;
+        channelId = null; // VODs don't have a channel ID in the same way live channels do
+        console.log(`[STREAM] VOD stream detected for logging: Name='${channelName}'`);
+    } else {
+        // It's a live channel stream, use existing M3U parsing logic
+        const allChannels = parseM3U(fs.existsSync(LIVE_CHANNELS_M3U_PATH) ? fs.readFileSync(LIVE_CHANNELS_M3U_PATH, 'utf-8') : '');
+        const channel = allChannels.find(c => c.url === streamUrl);
+        channelName = channel ? channel.displayName || channel.name : 'Direct Stream';
+        channelId = channel ? channel.id : null;
+        channelLogo = channel ? channel.logo : null;
+    }
     const streamProfileName = profile ? profile.name : 'Unknown Profile';
+    // --- END NEW ---
     
     console.log(`[STREAM] Using Profile='${profile.name}' (ID=${profile.id}), UserAgent='${userAgent.name}'`);
 
