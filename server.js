@@ -1319,18 +1319,33 @@ app.post('/api/sources/fetch-groups', requireAuth, async (req, res) => {
         // --- End Fetch Logic ---
 
 
-        // --- Efficiently Extract Groups (Same as before) ---
+        // --- Efficiently Extract Groups (Handles JSON for XC and Regex for M3U) ---
         const groups = new Set();
         try {
+            // First, try to parse as JSON (for XC sources which return a JSON array of categories)
             const groupJsonArray = JSON.parse(content);
-            console.log(`[API_GROUPS] Scanning ${groupJsonArray.length} groups for group titles...`);
-            for (const category of groupJsonArray) {
-                const groupName = category.category_name.trim();
-                if (groupName) groups.add(groupName);
+            console.log(`[API_GROUPS] Successfully parsed content as JSON. Scanning for group titles.`);
+            if (Array.isArray(groupJsonArray)) {
+                for (const category of groupJsonArray) {
+                    if (category && typeof category.category_name === 'string') {
+                        const groupName = category.category_name.trim();
+                        if (groupName) groups.add(groupName);
+                    }
+                }
             }
-        } catch (error) {
-            console.log("Error parsing group JSON:", error);
+        } catch (jsonError) {
+            // If JSON parsing fails, assume it's a plain M3U file and use regex
+            console.log(`[API_GROUPS] Content is not valid JSON, attempting to parse as plain M3U.`);
+            const groupTitleRegex = /group-title=\"([^\"]+)\"/g;
+            let match;
+            while ((match = groupTitleRegex.exec(content)) !== null) {
+                const groupName = match[1].trim();
+                if (groupName) {
+                    groups.add(groupName);
+                }
+            }
         }
+
         const sortedGroups = Array.from(groups).sort((a, b) => a.localeCompare(b));
         console.log(`[API_GROUPS] Found ${sortedGroups.length} unique groups.`);
         res.json({ success: true, groups: sortedGroups, usedCache: usedCache }); // Optionally tell frontend if cache was used
