@@ -807,10 +807,56 @@ async function processAndMergeSources(req) {
 
                 // Use the default user agent for XC requests
                 m3uFetchOptions = { headers: { 'User-Agent': 'VLC/3.0.20 (Linux; x86_64)' } };
-                const m3uUrl = `${server}/get.php?username=${username}&password=${password}&type=m3u_plus&output=ts`;
-                console.log(`[M3U] Constructed XC URL for "${source.name}": ${m3uUrl}`);
-                sendProcessingStatus(req, ` -> Fetching content from XC server...`, 'info');
-                content = await fetchUrlContent(m3uUrl, m3uFetchOptions);
+
+                // Fetch live streams from XC API
+                const liveStreamsUrl = `${server}/player_api.php?username=${username}&password=${password}&action=get_live_streams`;
+                try {
+                    sendProcessingStatus(req, ` -> Fetching live categories from XC server...`, 'info');
+                    const liveCategoriesUrl = `${server}/player_api.php?username=${username}&password=${password}&action=get_live_categories`;
+                    console.log(`[M3U] Constructed XC Categories URL for "${source.name}": ${liveCategoriesUrl}`);
+                    const liveCategoriesResponse = await fetchUrlContent(liveCategoriesUrl, m3uFetchOptions);
+                    const liveCategories = JSON.parse(liveCategoriesResponse);
+
+                    sendProcessingStatus(req, ` -> Fetching live streams from XC server...`, 'info');
+                    console.log(`[M3U] Constructed XC Streams URL for "${source.name}": ${liveCategoriesUrl}`);
+                    const liveStreamsResponse = await fetchUrlContent(liveStreamsUrl, m3uFetchOptions);
+                    const liveStreams = JSON.parse(liveStreamsResponse);
+
+                    // Filter and convert live streams to M3U format
+                    let liveM3uContent = '';
+                    let liveStreamCount = 0;
+
+                    if (Array.isArray(liveStreams)) {
+                        for (const stream of liveStreams) {
+                            if (stream.stream_type === 'live') {
+                                liveStreamCount++;
+                                const streamUrl = `${server}/live/${username}/${password}/${stream.stream_id}.ts`;
+
+                                // Find category name from categories array
+                                const categoryName = Array.isArray(liveCategories)
+                                    ? liveCategories.find(cat => cat.category_id == stream.category_id)?.category_name || 'Live'
+                                    : 'Live';
+
+                                // Use epg_channel_id if available, otherwise use stream_id
+                                const tvgId = stream.epg_channel_id || stream.stream_id;
+
+                                liveM3uContent += `#EXTINF:-1 tvg-id="${tvgId}" tvg-name="${stream.name}" tvg-logo="${stream.stream_icon || ''}" group-title="${categoryName}",${stream.name}\n`;
+                                liveM3uContent += `${streamUrl}\n`;
+                            }
+                        }
+                    }
+
+                    if (liveStreamCount > 0) {
+                        content += '\n' + liveM3uContent;
+                        sendProcessingStatus(req, ` -> Added ${liveStreamCount} live streams to content.`, 'info');
+                    } else {
+                        sendProcessingStatus(req, ` -> No live streams found with stream_type = 'live'.`, 'info');
+                    }
+                } catch (liveError) {
+                    console.error(`[XC Live] Error fetching live streams for "${source.name}": ${liveError.message}`);
+                    sendProcessingStatus(req, ` -> Warning: Could not fetch live streams: ${liveError.message}`, 'warning');
+                }
+
                 // Save raw content to cache (XC) ---
                 try {
                     // Define cache path (ensure it's unique per source)
@@ -829,7 +875,8 @@ async function processAndMergeSources(req) {
                     // Clear any potentially stale cache path if writing failed
                     delete source.cachedRawPath;
                 }
-                sourcePathForLog = m3uUrl;
+
+                sourcePathForLog = liveStreamsUrl;
                 sendProcessingStatus(req, ` -> Successfully fetched M3U content from XC server.`, 'info');
             }
 
@@ -934,7 +981,6 @@ async function processAndMergeSources(req) {
         console.error(`[PROCESS] Error writing LIVE M3U file: ${writeErr.message}`);
         sendProcessingStatus(req, `Error writing live channels file: ${writeErr.message}`, 'error');
     }
-    // <<<--- THE ORPHANED CATCH BLOCK WAS REMOVED FROM HERE --->>>
 
     // --- EPG Processing (now filtered) ---
     const mergedProgramData = {};
@@ -1275,18 +1321,19 @@ app.post('/api/sources/fetch-groups', requireAuth, async (req, res) => {
 
         // --- Efficiently Extract Groups (Same as before) ---
         const groups = new Set();
-        const groupRegex = /group-title="([^"]*)"/i;
-        const lines = content.split('\n');
-        console.log(`[API_GROUPS] Scanning ${lines.length} lines for group titles...`);
-        for (const line of lines) {
-            if (line.startsWith('#EXTINF:')) {
-                const match = line.match(groupRegex);
-                if (match && match[1]) {
-                    const groupName = match[1].trim();
-                    if (groupName) groups.add(groupName);
-                }
+        try {
+            const groupJsonArray = JSON.parse(content);
+            console.log(`[API_GROUPS] Scanning ${groupJsonArray.length} groups for group titles...`);
+            for (const category of groupJsonArray) {
+                const groupName = category.category_name.trim();
+                if (groupName) groups.add(groupName);
             }
+        } catch (error) {
+            console.log("Error parsing group JSON:", error);
         }
+
+        const sortedGroups = Array.from(groups).sort((a, b) => a.localeCompare(b));
+        console.log(`[API_GROUPS] Found ${sortedGroups.length} unique groups.`);
         const sortedGroups = Array.from(groups).sort((a, b) => a.localeCompare(b));
         console.log(`[API_GROUPS] Found ${sortedGroups.length} unique groups.`);
         res.json({ success: true, groups: sortedGroups, usedCache: usedCache }); // Optionally tell frontend if cache was used
