@@ -1331,9 +1331,6 @@ app.post('/api/sources/fetch-groups', requireAuth, async (req, res) => {
         } catch (error) {
             console.log("Error parsing group JSON:", error);
         }
-
-        const sortedGroups = Array.from(groups).sort((a, b) => a.localeCompare(b));
-        console.log(`[API_GROUPS] Found ${sortedGroups.length} unique groups.`);
         const sortedGroups = Array.from(groups).sort((a, b) => a.localeCompare(b));
         console.log(`[API_GROUPS] Found ${sortedGroups.length} unique groups.`);
         res.json({ success: true, groups: sortedGroups, usedCache: usedCache }); // Optionally tell frontend if cache was used
